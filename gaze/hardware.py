@@ -43,14 +43,28 @@ class Motor:
         self.pan = self.tilt = 90.
         self.last = time.monotonic()
         if config['enabled'] and config['calibrated']:
-            from smbus2 import SMBus
-            self.bus = SMBus(config['bus'])
-            addr = config['address']
-            self.bus.write_byte_data(addr, 0, 0x10)
-            self.bus.write_byte_data(addr, 0xfe, 121)  # nominal 50 Hz
-            self.bus.write_byte_data(addr, 0, 0x20)
+            self.arm()
+
+    def arm(self):
+        from pathlib import Path
+        from smbus2 import SMBus
+        device = Path(f"/sys/bus/i2c/devices/{self.c['bus']}-{self.c['address']:04x}/driver")
+        if device.exists():
+            raise RuntimeError('Address belongs to a kernel-managed device; refusing servo writes')
+        bus = SMBus(self.c['bus'])
+        addr = self.c['address']
+        try:
+            bus.read_byte_data(addr, 0)  # Require acknowledgement before any writes.
+            bus.write_byte_data(addr, 0, 0x10)
+            bus.write_byte_data(addr, 0xfe, 121)
+            bus.write_byte_data(addr, 0, 0x20)
             time.sleep(.005)
-            self.bus.write_byte_data(addr, 0, 0xa0)
+            bus.write_byte_data(addr, 0, 0xa0)
+        except Exception:
+            bus.close()
+            raise
+        self.bus = bus
+        self.last = time.monotonic()
 
     def move(self, pan, tilt):
         now = time.monotonic()
@@ -75,6 +89,9 @@ class Motor:
 
     def close(self):
         if self.bus:
-            for ch in [self.c['pan_channel'],self.c['tilt_channel']]:
-                self.bus.write_byte_data(self.c['address'],9+4*ch,0x10)
-            self.bus.close()
+            try:
+                for ch in [self.c['pan_channel'],self.c['tilt_channel']]:
+                    self.bus.write_byte_data(self.c['address'],9+4*ch,0x10)
+            finally:
+                self.bus.close()
+                self.bus = None

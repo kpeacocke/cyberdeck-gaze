@@ -80,3 +80,13 @@ cooldowns, stale targets and data retention; they do not prove motor calibration
 Hardware/API references:
 - https://www.raspberrypi.com/documentation/accessories/ai-camera.html
 - https://github.com/ArduCAM/PCA9685
+
+### Manual motor controls
+
+Open **Motors** to pause automatic movement and test the controller. **Arm / retry**
+requires a responding address and refuses kernel-owned devices. The first jog
+commands a position near 90°; verify the assembly can reach centre first.
+Pan/tilt ±2° buttons command bounded, rate-limited movement. **Stop / release**
+disables both servo outputs. Closing the motor panel also releases them.
+Motor I/O failure leaves the live camera running. Successful I²C communication
+still does not prove motor power, direction or physical movement.

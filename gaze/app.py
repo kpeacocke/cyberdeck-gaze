@@ -22,6 +22,7 @@ class App:
         self.last_pruned = 0
         self.motor_state = 'MOTION DISABLED — calibration required'
         self.latest = None
+        self.manual = False
         root.title('CYBERDECK / GAZE')
         root.configure(bg='#10171e')
         root.geometry('1160x920')
@@ -35,6 +36,7 @@ class App:
         for mode in ['Explore','Follow','Park']:
             ttk.Button(header,text=mode,command=lambda m=mode:self.set_mode(m)).pack(side='left',padx=5)
         ttk.Button(header,text='Settings',command=self.settings).pack(side='right')
+        ttk.Button(header,text='Motors',command=self.motor_controls).pack(side='right',padx=5)
         body=tk.Frame(root,bg='#10171e');body.pack(fill='both',expand=True,padx=18)
         self.canvas=tk.Canvas(body,width=840,height=630,bg='#080d12',highlightthickness=0)
         self.canvas.pack(side='left',anchor='n')
@@ -61,18 +63,39 @@ class App:
         camera=motor=None
         try:
             camera=Camera(self.config)
-            motor=Motor(self.config['motor'])
-            self.motor_state='MOTION ACTIVE' if motor.bus else 'MOTION DISABLED — calibration required'
+            motor=Motor(dict(self.config['motor'], enabled=False))
+            manual_goal=None
+            if self.config['motor']['enabled'] and self.config['motor']['calibrated']:
+                try:
+                    motor.arm()
+                    self.motor_state='MOTION ACTIVE'
+                except Exception as error:self.motor_state='MOTOR UNAVAILABLE: '+str(error)
             while not self.stop.is_set():
                 frame,detections=camera.read()
-                latest_command=None
-                while not self.commands.empty():
-                    latest_command=self.commands.get_nowait()
-                if latest_command:
-                    op,value=latest_command
-                    if op=='follow':motor.follow(value)
-                    if op=='park':motor.move(90,90)
-                    if op=='scan':motor.move(value,90)
+                try:
+                    while not self.commands.empty():
+                        op,value=self.commands.get_nowait()
+                        if op=='arm':
+                            if not motor.bus:motor.arm()
+                            self.motor_state='MANUAL MOTOR TEST — automatic movement paused'
+                        elif op=='off':
+                            motor.close();manual_goal=None
+                            self.motor_state='MOTORS OFF'
+                        elif op=='jog' and motor.bus:
+                            base=manual_goal or (motor.pan,motor.tilt)
+                            manual_goal=(base[0]+value[0],base[1]+value[1])
+                        elif not self.manual and motor.bus and self.config['motor']['calibrated']:
+                            manual_goal=None
+                            if op=='follow':motor.follow(value)
+                            if op=='park':motor.move(90,90)
+                            if op=='scan':motor.move(value,90)
+                    if self.manual and motor.bus and manual_goal:
+                        motor.move(*manual_goal)
+                except Exception as error:
+                    self.motor_state=f'MOTOR UNAVAILABLE: {error} — camera remains active'
+                    manual_goal=None
+                    try:motor.close()
+                    except OSError:pass
                 packet=(frame,detections,None)
                 try:self.frames.get_nowait()
                 except queue.Empty:pass
@@ -115,7 +138,8 @@ class App:
                 self.photo=ImageTk.PhotoImage(image.resize((840,630)))
                 if not hasattr(self,'image_item'):self.image_item=self.canvas.create_image(0,0,anchor='nw',image=self.photo)
                 else:self.canvas.itemconfigure(self.image_item,image=self.photo)
-                if target:self.commands.put(('follow',target.box))
+                if self.manual:pass
+                elif target:self.commands.put(('follow',target.box))
                 elif self.attention.mode=='Park':self.commands.put(('park',None))
                 elif not self.attention.tracks:
                     # Step-and-pause viewpoints, not continuous scanning blur.
@@ -125,6 +149,29 @@ class App:
         except queue.Empty:pass
         except Exception as error:self.status.set('APP ERROR: '+str(error))
         if not self.stop.is_set():self.root.after(40,self.tick)
+
+    def motor_controls(self):
+        import tkinter as tk
+        from tkinter import ttk
+        self.manual=True
+        win=tk.Toplevel(self.root);win.title('Pan / tilt — manual test')
+        ttk.Label(win,text='Automatic tracking is paused. Arm, then jog each axis.\nFirst jog commands near centre (90°); physical position is unknown.').pack(padx=16,pady=12)
+        ttk.Button(win,text='Arm / retry controller',command=lambda:self.commands.put(('arm',None))).pack(pady=5)
+        row=ttk.Frame(win);row.pack(padx=12,pady=10)
+        for label,delta in [('Pan −2°',(-2,0)),('Pan +2°',(2,0)),('Tilt −2°',(0,-2)),('Tilt +2°',(0,2))]:
+            ttk.Button(row,text=label,command=lambda d=delta:self.commands.put(('jog',d))).pack(side='left',padx=3)
+        ttk.Button(win,text='Stop / release motors',command=lambda:self.commands.put(('off',None))).pack(pady=8)
+        state=tk.StringVar()
+        ttk.Label(win,textvariable=state,wraplength=550).pack(padx=12,pady=10)
+        def update():
+            if win.winfo_exists():
+                state.set(self.motor_state);win.after(200,update)
+        def close():
+            self.commands.put(('off',None))
+            self.manual=False
+            win.destroy()
+        win.protocol('WM_DELETE_WINDOW',close)
+        update()
 
     def set_mode(self,mode):
         if mode=='Follow':
