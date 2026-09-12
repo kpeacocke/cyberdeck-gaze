@@ -74,10 +74,12 @@ class App:
                     if op=='park':motor.move(90,90)
                     if op=='scan':motor.move(value,90)
                 packet=(frame,detections,None)
-                if self.frames.full():self.frames.get_nowait()
+                try:self.frames.get_nowait()
+                except queue.Empty:pass
                 self.frames.put_nowait(packet)
         except Exception as error:
-            if self.frames.full():self.frames.get_nowait()
+            try:self.frames.get_nowait()
+            except queue.Empty:pass
             self.frames.put_nowait((None,[],f'{type(error).__name__}: {error}'))
         finally:
             if motor:motor.close()
