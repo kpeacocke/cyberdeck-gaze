@@ -53,9 +53,13 @@ Verified camera: IMX500, 960×720 preview, SSD MobileNet model from
 model output layout. Other model paths require checking output decoding first.
 
 The installed Arducam sample at `/home/kpeacocke/pca9685` uses bus 1, address
-`0x40`, tilt channel 0, pan channel 1. Those are sample assignments; the controller
-did not acknowledge a read on 13 September 2026. This does not establish why.
-No motor movement has been verified. Default travel bounds are provisional.
+`0x40`, tilt channel 0, pan channel 1. The user reconnected the controller power lead on physical pin 4 on 13 September
+2026. Bus 1 address `0x40` then acknowledged reads with PCA9685 default registers
+(MODE1 `0x11`, MODE2 `0x04`, SUBADR1–3 `0xe2/0xe4/0xe8`, ALLCALL `0xe0`).
+A centre / pan +4° / centre / tilt +4° / centre command sequence completed, and
+both channel PWM registers read back correctly. Physical direction and travel
+limits still require observation; register readback alone does not verify movement.
+Established wiring: 5V physical pin 4, GND pin 9, SDA pin 3/GPIO2, SCL pin 5/GPIO3.
 
 Before setting both `motor.enabled` and `motor.calibrated` to true, verify supply,
 I²C address, channel assignment, axis signs, pulse limits and mechanical travel.
