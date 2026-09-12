@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "cyberdeck-gaze"
+version = "0.1.0"
+description = "Local AI Camera attention and Arducam pan/tilt desktop"
+requires-python = ">=3.11"
+[project.scripts]
+cyberdeck-gaze = "gaze.app:main"
+[tool.setuptools.packages.find]
+include = ["gaze*"]

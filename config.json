@@ -1,0 +1,28 @@
+{
+  "storage_dir": "/mnt/nvme/cyberdeck-gaze",
+  "unknown_retention_hours": 24,
+  "max_storage_mb": 512,
+  "model": "/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk",
+  "confidence": 0.55,
+  "dwell_seconds": 12,
+  "cooldown_seconds": 20,
+  "lost_seconds": 2,
+  "preferred_classes": ["person", "dog", "cat", "bird"],
+  "motor": {
+    "enabled": false,
+    "calibrated": false,
+    "bus": 1,
+    "address": 64,
+    "pan_channel": 1,
+    "tilt_channel": 0,
+    "pan_min": 65,
+    "pan_max": 115,
+    "tilt_min": 70,
+    "tilt_max": 110,
+    "pan_sign": 1,
+    "tilt_sign": 1,
+    "speed_deg_s": 12,
+    "pulse_min_us": 500,
+    "pulse_max_us": 2500
+  }
+}
