@@ -11,8 +11,15 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.root/'sightings.sqlite3')
         self.db.execute('CREATE TABLE IF NOT EXISTS sightings (id INTEGER PRIMARY KEY, created REAL, label TEXT, name TEXT DEFAULT "", path TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, created REAL, kind TEXT, track INTEGER, label TEXT)')
         self.config = config
         self.prune()
+
+    def event(self, event):
+        self.db.execute('INSERT INTO events(created,kind,track,label) VALUES(?,?,?,?)',
+                        (time.time(),event['event'],event['track'],event['label']))
+        self.db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 1000)')
+        self.db.commit()
 
     def add(self, label, image):
         stamp = time.time()
@@ -39,6 +46,8 @@ class Store:
 
     def prune(self):
         cutoff = time.time()-self.config['unknown_retention_hours']*3600
+        self.db.execute('DELETE FROM events WHERE created<?',(cutoff,))
+        self.db.commit()
         for (ident,) in self.db.execute('SELECT id FROM sightings WHERE name="" AND created<?',(cutoff,)).fetchall():
             self.forget(ident)
         rows = self.db.execute('SELECT id,path,name FROM sightings ORDER BY created').fetchall()

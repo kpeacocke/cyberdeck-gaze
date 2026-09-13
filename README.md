@@ -4,7 +4,7 @@ A native desktop application on the Raspberry Pi: live IMX500 detection,
 short-lived subject tracking, attention switching and local sighting storage.
 One Python application, no cloud service, no external desktop dependency.
 
-## Current release: 0.1.0
+## Current release: 0.2.0
 
 Implemented and exercised on KP-Pi5:
 
@@ -20,8 +20,9 @@ Implemented and exercised on KP-Pi5:
   enabled on this cyberdeck after observed axis-direction tests.
 
 **A name on a saved sighting is not identity recognition.** Automatic face/pet
-recognition, learned places, scene-change detection, best-frame selection and
-active search after losing a subject are not implemented in this first release.
+recognition, learned places, general scene-change detection and best-frame
+selection are not implemented. Brief loss recovery revisits the last commanded
+viewpoint; it is not a room map or identity-based re-identification.
 Tracks are short-term geometric associations and can switch identity when similar
 subjects cross. Object detector labels can also be wrong, especially with an
 obscured or sideways camera. No emotion or threat inference is performed.
@@ -102,3 +103,24 @@ still does not prove motor power, direction or physical movement.
 Runtime status is written atomically to `runtime.json` in the configured storage
 directory. It records the last frame time, mode, target ID and commanded angles;
 these angles are software commands, not servo position feedback.
+
+## Attention and short-term memory
+
+Version 0.2 adds predicted-position, size-aware one-to-one association, background
+optical-flow compensation excluding subject boxes, and an interest score composed
+of detector confidence, preferred class, novelty and residual movement. Minimum
+dwell and a score margin resist rapid target switching; timed cooldown encourages
+looking elsewhere. Motion scoring is suppressed during commanded camera movement
+and settling, or when background flow cannot be estimated reliably.
+
+The desktop shows the current reason, remaining dwell and top three candidates.
+Lost targets retain their track briefly and the camera revisits their last viewing
+direction. Expired tracks remain in bounded two-minute session memory. This memory
+is not restored as identity across application restarts. Appeared, moving, stopped,
+reacquired, selected and left-view events are stored in NVMe SQLite, capped at 1000
+rows and subject to the unknown retention setting. No emotion labels are inferred.
+
+Limitations: translation-only background compensation cannot fully model rotation,
+parallax or a scene dominated by moving subjects. Geometric tracking can still
+swap IDs at crossings. Detector jitter can create false arrival/movement events;
+these are observations to tune, not guaranteed real-world activity classifications.

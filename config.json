@@ -29,5 +29,8 @@
     "speed_deg_s": 12,
     "pulse_min_us": 500,
     "pulse_max_us": 2500
-  }
+  },
+  "minimum_dwell_seconds": 4,
+  "switch_margin": 2.5,
+  "scene_memory_seconds": 120
 }

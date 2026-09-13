@@ -25,9 +25,13 @@ class App:
         self.manual = False
         self.motor_angles = (90.,90.)
         self.last_runtime = 0
+        from .motion import BackgroundMotion
+        self.background=BackgroundMotion()
+        self.previous_angles=(90.,90.)
+        self.camera_settle_until=0
         root.title('CYBERDECK / GAZE')
         root.configure(bg='#10171e')
-        root.geometry('1160x920')
+        root.geometry('1160x1100')
         style = ttk.Style()
         style.theme_use('clam')
         style.configure('.', background='#18232d', foreground='#e0edf5', font=('DejaVu Sans',11))
@@ -45,13 +49,15 @@ class App:
         self.canvas.bind('<Button-1>', self.click)
         side=tk.Frame(body,bg='#18232d',width=270);side.pack(side='left',fill='both',expand=True,padx=(12,0))
         tk.Label(side,text='RECENT SIGHTINGS',fg='#54ddcf',bg='#18232d').pack(pady=10)
-        self.listbox=tk.Listbox(side,bg='#18232d',fg='#e0edf5',selectbackground='#326677',height=15,width=30,exportselection=False)
+        self.listbox=tk.Listbox(side,bg='#18232d',fg='#e0edf5',selectbackground='#326677',height=8,width=30,exportselection=False)
         self.listbox.pack(fill='x',padx=10)
         self.listbox.bind('<<ListboxSelect>>',self.show_sighting)
         self.thumb=tk.Label(side,bg='#18232d');self.thumb.pack(pady=10)
         ttk.Button(side,text='Save with name',command=self.name_sighting).pack(fill='x',padx=10,pady=4)
         ttk.Button(side,text='Forget sighting',command=self.forget).pack(fill='x',padx=10,pady=4)
         tk.Label(side,text='Names label saved sightings.\nAutomatic identity recognition\nis not enabled in this release.',fg='#a0b1be',bg='#18232d',justify='left').pack(padx=10,pady=12)
+        self.attention_text=tk.StringVar(value='Watching for activity')
+        tk.Label(side,textvariable=self.attention_text,fg='#54ddcf',bg='#18232d',justify='left',wraplength=240).pack(padx=10,pady=8)
         self.status=tk.StringVar(value='Starting AI Camera — loading its model may take a while…')
         tk.Label(root,textvariable=self.status,fg='#a0b1be',bg='#10171e',anchor='w',wraplength=1200).pack(fill='x',padx=18,pady=12)
         self.refresh_list()
@@ -95,6 +101,7 @@ class App:
                             if op=='follow':motor.follow(value)
                             if op=='park':motor.move(90,90)
                             if op=='scan':motor.move(value,90)
+                            if op=='look':motor.move(*value)
                     if self.manual and motor.bus and manual_goal:
                         motor.move(*manual_goal)
                 except Exception as error:
@@ -128,7 +135,14 @@ class App:
                 if now-self.last_pruned>60:
                     self.store.prune()
                     self.last_pruned=now
-                target=self.attention.update(detections,now)
+                shift,reliable=self.background.update(frame,[d[2] for d in detections])
+                if max(abs(a-b) for a,b in zip(self.motor_angles,self.previous_angles))>.15:
+                    self.camera_settle_until=now+.7
+                self.previous_angles=self.motor_angles
+                target=self.attention.update(detections,now,shift,reliable,self.motor_angles,now<self.camera_settle_until)
+                self.attention_text.set('ATTENTION\n'+self.attention.reason+'\n\nCANDIDATES\n'+'\n'.join(f'{t.label} #{t.id}: {t.interest:.1f}\n{t.reasons}' for t in self.attention.ranked[:3]))
+                for event in self.attention.events:self.store.event(event)
+
                 raw=Image.fromarray(frame)
                 image=raw.copy();draw=ImageDraw.Draw(image)
                 for track in self.attention.tracks.values():
@@ -150,13 +164,15 @@ class App:
                 if self.manual:pass
                 elif target:self.commands.put(('follow',target.box))
                 elif self.attention.mode=='Park':self.commands.put(('park',None))
-                elif not self.attention.tracks:
+                elif self.attention.search_position:
+                    self.commands.put(('look',self.attention.search_position))
+                elif self.attention.target is None:
                     # Step-and-pause viewpoints, not continuous scanning blur.
                     mc=self.config['motor']
                     positions=[mc['pan_min'],90,mc['pan_max'],90]
                     self.commands.put(('scan',positions[int(now//5)%4]))
                 if now-self.last_runtime>=1:
-                    runtime={'timestamp':time.time(),'mode':self.attention.mode,'motor':self.motor_state,'pan':self.motor_angles[0],'tilt':self.motor_angles[1],'target':self.attention.target,'tracks':len(self.attention.tracks)}
+                    runtime={'timestamp':time.time(),'mode':self.attention.mode,'motor':self.motor_state,'pan':self.motor_angles[0],'tilt':self.motor_angles[1],'target':self.attention.target,'tracks':len(self.attention.tracks),'reason':self.attention.reason,'candidates':[{'id':t.id,'label':t.label,'interest':round(t.interest,2),'reasons':t.reasons} for t in self.attention.ranked[:5]],'memory':self.attention.memory}
                     tmp=self.store.root/'runtime.tmp'
                     tmp.write_text(json.dumps(runtime))
                     tmp.replace(self.store.root/'runtime.json')
