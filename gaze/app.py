@@ -23,6 +23,8 @@ class App:
         self.motor_state = 'MOTION DISABLED — calibration required'
         self.latest = None
         self.manual = False
+        self.motor_angles = (90.,90.)
+        self.last_runtime = 0
         root.title('CYBERDECK / GAZE')
         root.configure(bg='#10171e')
         root.geometry('1160x920')
@@ -75,7 +77,11 @@ class App:
                 try:
                     while not self.commands.empty():
                         op,value=self.commands.get_nowait()
-                        if op=='arm':
+                        if op=='auto':
+                            if self.config['motor']['calibrated']:
+                                if not motor.bus:motor.arm()
+                                self.motor_state='MOTION ACTIVE'
+                        elif op=='arm':
                             if not motor.bus:motor.arm()
                             self.motor_state='MANUAL MOTOR TEST — automatic movement paused'
                         elif op=='off':
@@ -96,6 +102,7 @@ class App:
                     manual_goal=None
                     try:motor.close()
                     except OSError:pass
+                self.motor_angles=(motor.pan,motor.tilt)
                 packet=(frame,detections,None)
                 try:self.frames.get_nowait()
                 except queue.Empty:pass
@@ -105,8 +112,10 @@ class App:
             except queue.Empty:pass
             self.frames.put_nowait((None,[],f'{type(error).__name__}: {error}'))
         finally:
-            if motor:motor.close()
-            if camera:camera.close()
+            try:
+                if motor:motor.close()
+            finally:
+                if camera:camera.close()
 
     def tick(self):
         from PIL import Image, ImageTk, ImageDraw
@@ -143,8 +152,15 @@ class App:
                 elif self.attention.mode=='Park':self.commands.put(('park',None))
                 elif not self.attention.tracks:
                     # Step-and-pause viewpoints, not continuous scanning blur.
-                    positions=[75,90,105,90]
+                    mc=self.config['motor']
+                    positions=[mc['pan_min'],90,mc['pan_max'],90]
                     self.commands.put(('scan',positions[int(now//5)%4]))
+                if now-self.last_runtime>=1:
+                    runtime={'timestamp':time.time(),'mode':self.attention.mode,'motor':self.motor_state,'pan':self.motor_angles[0],'tilt':self.motor_angles[1],'target':self.attention.target,'tracks':len(self.attention.tracks)}
+                    tmp=self.store.root/'runtime.tmp'
+                    tmp.write_text(json.dumps(runtime))
+                    tmp.replace(self.store.root/'runtime.json')
+                    self.last_runtime=now
                 self.status.set(f'{self.attention.mode.upper()}  ·  {self.attention.reason}  ·  {self.motor_state}\nStorage: {self.store.root}')
         except queue.Empty:pass
         except Exception as error:self.status.set('APP ERROR: '+str(error))
@@ -179,12 +195,15 @@ class App:
             return
         self.attention.mode=mode
         self.attention.target=None
+        if not self.manual:self.commands.put(('auto',None))
 
     def click(self,event):
         for t in self.attention.tracks.values():
             x,y,w,h=t.box
             if x<=event.x/0.875<=x+w and y<=event.y/0.875<=y+h:
-                self.attention.select(t.id,time.monotonic());break
+                self.attention.select(t.id,time.monotonic())
+                if not self.manual:self.commands.put(('auto',None))
+                break
 
     def refresh_list(self):
         self.rows=self.store.recent();self.listbox.delete(0,'end')

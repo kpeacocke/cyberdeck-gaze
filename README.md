@@ -17,7 +17,7 @@ Implemented and exercised on KP-Pi5:
 - NVMe default `/mnt/nvme/cyberdeck-gaze`; refuse SD fallback if that mount is missing.
 - Exclusive app instance. Only the camera worker touches camera/motor hardware.
 - PCA9685 motor adapter with speed limiting, centre deadband and bounded travel,
-  disabled until the controller is connected and calibration is established.
+  enabled on this cyberdeck after observed axis-direction tests.
 
 **A name on a saved sighting is not identity recognition.** Automatic face/pet
 recognition, learned places, scene-change detection, best-frame selection and
@@ -57,19 +57,23 @@ The installed Arducam sample at `/home/kpeacocke/pca9685` uses bus 1, address
 2026. Bus 1 address `0x40` then acknowledged reads with PCA9685 default registers
 (MODE1 `0x11`, MODE2 `0x04`, SUBADR1–3 `0xe2/0xe4/0xe8`, ALLCALL `0xe0`).
 A centre / pan +4° / centre / tilt +4° / centre command sequence completed, and
-both channel PWM registers read back correctly. Physical direction and travel
-limits still require observation; register readback alone does not verify movement.
+both channel PWM registers read back correctly. The user subsequently confirmed physical movement: positive pan turns right and
+positive tilt moves up, viewed from the camera. Tracking uses pan sign +1 and
+tilt sign -1 (image Y increases downward). Full mechanical travel remains unmeasured.
 Established wiring: 5V physical pin 4, GND pin 9, SDA pin 3/GPIO2, SCL pin 5/GPIO3.
 
-Before setting both `motor.enabled` and `motor.calibrated` to true, verify supply,
+For another assembly, disable `motor.enabled` until you verify supply,
 I²C address, channel assignment, axis signs, pulse limits and mechanical travel.
 PCA9685 drives ordinary open-loop servos: commanded angle is not measured position.
 The first command can move a servo from its unknown physical position. Do not
 assume software speed limiting limits that initial physical movement.
 
 Explore uses four bounded viewpoints when no tracks remain. Park requests the
-centre within configured limits and keeps detection active. Movement is inactive
-in the deployed configuration pending actual hardware calibration.
+centre within configured limits and keeps detection active. Movement is active in the deployed configuration, with conservative 80–100°
+bounds on both axes. Click a subject to follow it; Explore switches attention
+and scans when no subjects remain. Park returns to centre. The Motors panel
+provides release and manual jog controls; Explore/Park or selecting a subject
+re-arms automatic motion after manual release.
 
 ## Development
 
@@ -94,3 +98,7 @@ Pan/tilt ±2° buttons command bounded, rate-limited movement. **Stop / release*
 disables both servo outputs. Closing the motor panel also releases them.
 Motor I/O failure leaves the live camera running. Successful I²C communication
 still does not prove motor power, direction or physical movement.
+
+Runtime status is written atomically to `runtime.json` in the configured storage
+directory. It records the last frame time, mode, target ID and commanded angles;
+these angles are software commands, not servo position feedback.
