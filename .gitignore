@@ -11,3 +11,5 @@ known-subjects.tmp
 viewpoints.json
 viewpoints.tmp
 *.onnx
+scene-baselines.json
+scene-baselines.tmp

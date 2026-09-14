@@ -21,6 +21,9 @@ class Store:
         self.db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 1000)')
         self.db.commit()
 
+    def recent_events(self, limit=100):
+        return self.db.execute('SELECT created,kind,track,label FROM events ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
+
     def add(self, label, image):
         stamp = time.time()
         name = f'{time.time_ns()}.jpg'

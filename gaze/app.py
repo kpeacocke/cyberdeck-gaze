@@ -33,6 +33,8 @@ class App:
         from .places import Places
         self.recognition=RecognitionWorker(self.store.root,config)
         self.places=Places(self.store.root)
+        from .scene import SceneObserver
+        self.scene=SceneObserver(self.store.root,config)
         self.recognition_due=0
         self.recognition_cursor=0
         self.recognition_results={}
@@ -69,6 +71,7 @@ class App:
         ttk.Button(side,text='Save with name',command=self.name_sighting).pack(fill='x',padx=10,pady=4)
         ttk.Button(side,text='Enrol friend / pet',command=self.enrol_sighting).pack(fill='x',padx=10,pady=4)
         ttk.Button(side,text='Known subjects / forget',command=self.known_subjects).pack(fill='x',padx=10,pady=4)
+        ttk.Button(side,text='Observation history',command=self.observation_history).pack(fill='x',padx=10,pady=4)
         ttk.Button(side,text='Viewpoints',command=self.viewpoints).pack(fill='x',padx=10,pady=4)
         ttk.Button(side,text='Forget sighting',command=self.forget).pack(fill='x',padx=10,pady=4)
         self.recognition_status=tk.StringVar(value=self.recognition_note)
@@ -169,6 +172,14 @@ class App:
                 if self.view_goal:self.attention.reason='Looking at '+self.view_name
                 self.attention_text.set('ATTENTION\n'+self.attention.reason+'\n\nCANDIDATES\n'+'\n'.join(f'{t.label} #{t.id}: {t.interest:.1f}\n{t.reasons}' for t in self.attention.ranked[:3]))
                 for event in self.attention.events:self.store.event(event)
+                scene_name=None;scene_position=None
+                for name,position in self.places.valid(self.config['motor']).items():
+                    if max(abs(a-b) for a,b in zip(position,self.motor_angles))<.4:
+                        scene_name=name;scene_position=position;break
+                stable=now>=self.camera_settle_until and not self.manual
+                for event in self.scene.observe(scene_name,scene_position,detections,time.time(),stable):
+                    self.store.event(event)
+
 
                 self.poll_recognition(now)
                 raw=Image.fromarray(frame)
@@ -220,10 +231,10 @@ class App:
                     mc=self.config['motor']
                     positions=[mc['pan_min'],90,mc['pan_max'],90]
                     saved=list(self.places.valid(mc).values())
-                    if saved:self.commands.put(('look',saved[int(now//5)%len(saved)]))
+                    if saved:self.commands.put(('look',saved[int(now//self.config.get('viewpoint_dwell_seconds',10))%len(saved)]))
                     else:self.commands.put(('scan',positions[int(now//5)%4]))
                 if now-self.last_runtime>=1:
-                    runtime={'timestamp':time.time(),'mode':self.attention.mode,'motor':self.motor_state,'pan':self.motor_angles[0],'tilt':self.motor_angles[1],'target':self.attention.target,'recognition':self.recognition_note,'viewpoints':len(self.places.items),'tracks':len(self.attention.tracks),'reason':self.attention.reason,'candidates':[{'id':t.id,'label':t.label,'interest':round(t.interest,2),'reasons':t.reasons} for t in self.attention.ranked[:5]],'memory':self.attention.memory}
+                    runtime={'timestamp':time.time(),'mode':self.attention.mode,'motor':self.motor_state,'pan':self.motor_angles[0],'tilt':self.motor_angles[1],'target':self.attention.target,'recognition':self.recognition_note,'viewpoints':len(self.places.items),'scene':self.scene.note,'tracks':len(self.attention.tracks),'reason':self.attention.reason,'candidates':[{'id':t.id,'label':t.label,'interest':round(t.interest,2),'reasons':t.reasons} for t in self.attention.ranked[:5]],'memory':self.attention.memory}
                     tmp=self.store.root/'runtime.tmp'
                     tmp.write_text(json.dumps(runtime))
                     tmp.replace(self.store.root/'runtime.json')
@@ -297,6 +308,25 @@ class App:
         ttk.Button(win,text='Delete all recognition references for selection',command=forget).pack(padx=15,pady=10)
         ttk.Label(win,text='Deletes recognition data. Saved sighting photos are managed separately.').pack(padx=15,pady=10)
 
+    def observation_history(self):
+        import tkinter as tk
+        from tkinter import ttk
+        win=tk.Toplevel(self.root);win.title('Gaze — observation history')
+        scene=tk.StringVar(value=self.scene.note)
+        ttk.Label(win,textvariable=scene,wraplength=850).pack(padx=12,pady=12)
+        listing=tk.Listbox(win,width=100,height=25)
+        listing.pack(padx=12,pady=8,fill='both',expand=True)
+        ttk.Label(win,text='Detection changes are not proof that something physically arrived or left.\nLighting, occlusion and recognition errors can change what is detected.').pack(padx=12,pady=12)
+        def refresh():
+            if not win.winfo_exists():return
+            scene.set(self.scene.note)
+            listing.delete(0,'end')
+            for stamp,kind,ident,label in self.store.recent_events():
+                suffix=f' #{ident}' if ident else ''
+                listing.insert('end',f'{time.strftime("%H:%M:%S",time.localtime(stamp))}  {label}{suffix} — {kind}')
+            win.after(2000,refresh)
+        refresh()
+
     def viewpoints(self):
         import tkinter as tk
         from tkinter import ttk,simpledialog,messagebox
@@ -324,8 +354,13 @@ class App:
             self.attention.reason='Looking at '+name
         def forget():
             sel=listing.curselection()
-            if sel:self.places.forget(names[sel[0]]);refresh()
-        for title,action in [('Save current direction',save),('Look at selection',look),('Delete selection',forget)]:
+            if sel:
+                self.scene.reset(names[sel[0]])
+                self.places.forget(names[sel[0]]);refresh()
+        def reset_baseline():
+            sel=listing.curselection()
+            if sel:self.scene.reset(names[sel[0]])
+        for title,action in [('Save current direction',save),('Look at selection',look),('Reset observation baseline',reset_baseline),('Delete selection',forget)]:
             ttk.Button(win,text=title,command=action).pack(fill='x',padx=12,pady=4)
         ttk.Label(win,text='Explore revisits saved viewpoints. Explore or Park releases a fixed view.').pack(padx=12,pady=10)
         refresh()

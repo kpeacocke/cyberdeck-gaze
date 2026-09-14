@@ -4,7 +4,7 @@ A native desktop application on the Raspberry Pi: live IMX500 detection,
 short-lived subject tracking, attention switching and local sighting storage.
 One Python application, no cloud service, no external desktop dependency.
 
-## Current release: 0.3.0
+## Current release: 0.4.0
 
 Implemented and exercised on KP-Pi5:
 
@@ -23,7 +23,8 @@ Implemented and exercised on KP-Pi5:
 reference. Local face recognition uses YuNet detection/alignment and SFace
 embeddings; pet matching compares local visual features and is always presented
 as an experimental **Possible** match. These are separate from short-term track IDs.
-General scene-change understanding and gesture recognition remain future work.
+Persistent detector-count comparison at named viewpoints is available; general
+scene understanding and gesture recognition remain future work.
 Brief loss recovery revisits the last commanded viewpoint; it is not a room map.
 Tracks are short-term geometric associations and can switch identity when similar
 subjects cross. Object detector labels can also be wrong, especially with an
@@ -187,3 +188,25 @@ Recognition model sources and their own licence terms:
 - [OpenCV face recognition API](https://docs.opencv.org/4.10.0/d0/dd4/tutorial_dnn_face.html)
 
 `setup-models.py` checks pinned SHA-256 digests before installing model downloads.
+
+## Persistent observations at viewpoints
+
+Version 0.4 adds **Observation history** and per-viewpoint detection baselines.
+Save a viewpoint, choose **Look at selection**, and let the camera settle. After
+at least three seconds and five consistent samples, Gaze records the detected
+class counts. Later stable changes produce events such as `Door: detected count
+1 → 0` for a person. This describes detector output; it does not prove a person
+left, an object was removed or a specific individual returned.
+
+Comparison pauses during motor movement, settling and manual calibration. It only
+compares the same named/commanded direction. Changing a saved direction starts a
+fresh baseline. **Reset observation baseline** in Viewpoints clears one manually,
+useful after moving the whole cyberdeck. Moving the base cannot be sensed reliably
+from servo positions alone. Detection flicker shorter than the confirmation window
+is ignored; sustained lighting or occlusion errors can still produce false events.
+
+Baselines are stored as class counts and angles in `scene-baselines.json` on NVMe,
+without scene images. They expire using unknown retention hours and are capped at
+30. Observation history uses the existing 1000-row, expiring event store. Named
+Explore scan steps now allow ten seconds per viewpoint when attention is free;
+selecting a subject can interrupt a scan. Use Look for an uninterrupted comparison.
