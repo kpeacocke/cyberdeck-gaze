@@ -4,7 +4,7 @@ A native desktop application on the Raspberry Pi: live IMX500 detection,
 short-lived subject tracking, attention switching and local sighting storage.
 One Python application, no cloud service, no external desktop dependency.
 
-## Current release: 0.2.0
+## Current release: 0.3.0
 
 Implemented and exercised on KP-Pi5:
 
@@ -19,10 +19,12 @@ Implemented and exercised on KP-Pi5:
 - PCA9685 motor adapter with speed limiting, centre deadband and bounded travel,
   enabled on this cyberdeck after observed axis-direction tests.
 
-**A name on a saved sighting is not identity recognition.** Automatic face/pet
-recognition, learned places, general scene-change detection and best-frame
-selection are not implemented. Brief loss recovery revisits the last commanded
-viewpoint; it is not a room map or identity-based re-identification.
+**Save with name** labels a photo. **Enrol friend / pet** creates a recognition
+reference. Local face recognition uses YuNet detection/alignment and SFace
+embeddings; pet matching compares local visual features and is always presented
+as an experimental **Possible** match. These are separate from short-term track IDs.
+General scene-change understanding and gesture recognition remain future work.
+Brief loss recovery revisits the last commanded viewpoint; it is not a room map.
 Tracks are short-term geometric associations and can switch identity when similar
 subjects cross. Object detector labels can also be wrong, especially with an
 obscured or sideways camera. No emotion or threat inference is performed.
@@ -31,14 +33,18 @@ obscured or sideways camera. No emotion or threat inference is performed.
 
 ```sh
 sudo apt-get install python3-picamera2 python3-tk python3-pil.imagetk python3-opencv python3-smbus2 imx500-models
+python3 setup-models.py
 ./install.sh
-python3 -m gaze.app
+./launch.sh
 ```
 
 Launch **Cyberdeck Gaze** from the desktop application menu. The launcher runs from
 the installation directory; do not move that directory without rerunning install.sh.
 This does not change the existing e-paper application or boot configuration.
-Closing the window stops capture. Automatic boot launch is not enabled.
+Closing the window stops capture and leaves the app closed. A desktop-login
+autostart entry launches it next session; a persistent user service restarts
+crashes. Capture failures retry after three seconds. Startup requires a logged-in
+graphical desktop, not merely a headless boot.
 
 Config: `~/.config/cyberdeck-gaze/config.json`. Settings changes apply on restart;
 changing storage location does not migrate existing data. Unknown images and rows
@@ -124,3 +130,60 @@ Limitations: translation-only background compensation cannot fully model rotatio
 parallax or a scene dominated by moving subjects. Geometric tracking can still
 swap IDs at crossings. Detector jitter can create false arrival/movement events;
 these are observations to tune, not guaranteed real-world activity classifications.
+
+## Enrolment and recognition
+
+Select a clear person, dog or cat sighting and press **Enrol friend / pet**. Reuse
+the same name to add views. People need exactly one face, at least 40 pixels wide
+and high, with sufficient sharpness. Live matches require two consecutive accepted
+comparisons. Face cosine similarity must exceed 0.5 with a 0.08 lead over another
+identity by default; scores are similarity values, not calibrated probabilities.
+Names disappear on rejected comparisons. There is no guarantee against ID swaps.
+
+Pet matching is experimental ORB detail plus colour-histogram comparison, not a
+trained individual-animal recognizer. It can match the background or confuse similar
+animals. Enrol several clear views; treat **Possible NAME** as a suggestion to check.
+No breeds, emotions or threat levels are inferred from these comparisons.
+
+**Known subjects / forget** deletes all recognition references for a chosen name.
+Saved sighting photos are separately deletable. References live in
+`known-subjects.json` under configured NVMe storage with owner-only permissions;
+unknown embeddings stay in memory and are not added to the gallery. A 200-example
+cap bounds the gallery. Models live separately in `/mnt/nvme/models/cyberdeck-gaze`.
+No sightings, identity names or embeddings are committed to GitHub.
+
+Recognition runs in a bounded background queue, round-robin across visible people
+and pets. The camera remains IMX500-driven; face/pet comparison uses the Pi CPU.
+Face model smoke tests used a public OpenCV fixture, not the user's people. Real
+friend/pet recognition accuracy must be evaluated using their enrolled examples.
+
+## Calibration, viewpoints and sighting quality
+
+**Motors → Calibrate limits / directions** supports trial changes of at most 5°
+per bound. Apply a trial, jog in the motor window, observe travel and cable slack,
+then save observed limits. Cancel discards trial limits. Existing defaults remain
+80–100° until an operator confirms wider travel; open-loop PWM cannot sense stops.
+
+**Viewpoints → Save current direction** records a name and commanded angles.
+**Look at selection** holds that direction; Explore resumes attention and revisits
+saved viewpoints when there is no chosen subject. Positions outside current limits
+are rejected. Storage is local `viewpoints.json`, capped at 30 entries.
+
+Sighting capture now chooses the highest sharpness-times-confidence crop from a
+short observation window instead of blindly taking its first frame. It retains
+at most 30 pending crops, saves no more often than every 30 seconds per track,
+and uses up to 640×480 pixels for better enrolment detail.
+
+## Validation and model provenance
+
+Automated tests cover motion-compensated association, crossing trajectories,
+closed-loop centring in a simulated scene, occlusion, dwell/cooldown policy,
+recognition ambiguity/abstention, deletion, persistence, calibration bounds,
+viewpoints and storage retention. Synthetic tests are not physical calibration.
+
+Recognition model sources and their own licence terms:
+- [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
+- [SFace](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface)
+- [OpenCV face recognition API](https://docs.opencv.org/4.10.0/d0/dd4/tutorial_dnn_face.html)
+
+`setup-models.py` checks pinned SHA-256 digests before installing model downloads.

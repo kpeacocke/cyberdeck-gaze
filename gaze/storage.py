@@ -24,7 +24,7 @@ class Store:
     def add(self, label, image):
         stamp = time.time()
         name = f'{time.time_ns()}.jpg'
-        image.thumbnail((320,240))
+        image.thumbnail((640,480))
         image.save(self.root/name, quality=80)
         self.db.execute('INSERT INTO sightings(created,label,path) VALUES(?,?,?)',(stamp,label,name))
         self.db.commit()

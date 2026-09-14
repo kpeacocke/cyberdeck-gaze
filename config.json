@@ -32,5 +32,9 @@
   },
   "minimum_dwell_seconds": 4,
   "switch_margin": 2.5,
-  "scene_memory_seconds": 120
+  "scene_memory_seconds": 120,
+  "recognition_model_dir": "/mnt/nvme/models/cyberdeck-gaze",
+  "face_match_threshold": 0.5,
+  "pet_match_threshold": 0.7,
+  "recognition_margin": 0.08
 }

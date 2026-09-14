@@ -6,3 +6,8 @@ __pycache__/
 *.log
 runtime.json
 runtime.tmp
+known-subjects.json
+known-subjects.tmp
+viewpoints.json
+viewpoints.tmp
+*.onnx
